@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>統計儀表板 </title>
+    <!-- 引用外部函式庫 -->
+    <script src="https://cdn.tailwindcss.com"></script> <!-- 強大的CSS框架，負責所有樣式 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- 專業的圖表繪製函式庫 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"> <!-- 提供所有漂亮的圖示 -->
+    
+    <!-- TailwindCSS 的即時配置 -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class', // 啟用深色模式功能，可以透過在<html>標籤上加class="dark"來切換
+            theme: {
+                extend: { // 擴充預設的顏色主題
+                    colors: {
+                        'yt-red': '#FF0000',
+                        'yt-black': '#0F0F0F',
+                        'yt-white': '#FFFFFF',
+                        'yt-light-black': '#272727',
+                    },
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-[#f9f9f9] dark:bg-yt-black text-yt-black dark:text-white">
+    <!-- 頂部導航欄 -->
+    <header class="sticky top-0 z-50 flex items-center justify-between h-14 px-4 bg-white dark:bg-yt-black border-b border-gray-200 dark:border-yt-light-black">
+        <a href="index.html" class="flex items-center">
+            <i class="fab fa-youtube text-yt-red text-3xl"></i>
+            <span class="font-semibold text-xl ml-1 tracking-tighter">統計儀表板</span>
+        </a>
+        <div class="flex items-center space-x-2">
+             <!-- 按鈕：重置本地企劃數據 -->
+             <button id="reset-projects-btn" class="p-2 w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-yt-light-black" title="重置本地企劃數據">
+                <i class="fas fa-trash-alt text-xl text-orange-500"></i>
+            </button>
+             <!-- 按鈕：重置雲端投票紀錄 -->
+             <button id="reset-sheet-btn" class="p-2 w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-yt-light-black" title="重置雲端投票紀錄">
+                <i class="fas fa-database text-xl text-blue-500"></i>
+            </button>
+            <!-- 按鈕：切換深色/淺色模式 -->
+            <button id="theme-toggle" class="p-2 w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-yt-light-black">
+                <i class="fas fa-sun text-xl hidden dark:block"></i>
+                <i class="fas fa-moon text-xl dark:hidden"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main class="p-6">
+        <!-- 讀取中提示：預設顯示，讀取成功後會被隱藏 -->
+        <div id="loading" class="text-center py-20 text-gray-500">
+            <i class="fas fa-spinner fa-spin text-4xl mb-4"></i>
+            <p>正在從雲端同步數據...</p>
+        </div>
+        <!-- 統計內容區：預設隱藏，讀取成功後會顯示 -->
+        <div id="stats-content" class="hidden space-y-6">
+            <!-- 區塊一：四個總覽數據卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" id="summary-cards">
+                <!-- 總覽卡片將由 JavaScript 動態生成於此 -->
+            </div>
+            <!-- 區塊二：兩個圖表 -->
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <div class="lg:col-span-2 bg-white dark:bg-yt-light-black p-4 rounded-xl shadow-sm"><canvas id="projectsChart"></canvas></div>
+                <div class="lg:col-span-3 bg-white dark:bg-yt-light-black p-4 rounded-xl shadow-sm"><canvas id="topVideosChart"></canvas></div>
+            </div>
+            <!-- 區塊三：詳細數據列表 -->
+            <div id="details-container" class="bg-white dark:bg-yt-light-black p-4 rounded-xl shadow-sm">
+                 <!-- 詳細列表將由 JavaScript 動態生成於此 -->
+            </div>
+        </div>
+    </main>
+
+    <script>
+    // ===================================================================================
+    // ===                           第一部分：核心設定                                   ===
+    // ===================================================================================
+
+    /**
+     * @description 【可修改區】與後台溝通的專屬網址。
+     * @instructions 請確保這裡的網址與 index.html 中的 SCRIPT_URL 完全相同。
+     */
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyIjJK9EzOHiZVFXgRthq9bu4MSvUGBE5Mtgyzmi1-fOuKVNLPORrufFNC_-9PaS9dC/exec';
+    
+    /**
+     * @description 【可修改區】您自己的 Google Sheet 編輯網址。
+     * @instructions 用於「重置雲端投票紀錄」按鈕，點擊後會直接打開這個網址，方便您手動刪除數據。
+     */
+    const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1umk_iDZRIek-97QE3xeCRlhwjQ7qbblLgwUUtWLISrQ/edit?gid=0#gid=0';
+
+    // ===================================================================================
+    // ===                           第二部分：程式進入點與初始化                           ===
+    // ===================================================================================
+    
+    /**
+     * @description 頁面載入完成後的主函數，負責綁定所有按鈕的功能。
+     */
+    document.addEventListener('DOMContentLoaded', () => {
+        // 1. 初始化深色/淺色模式的切換功能
+        initTheme();
+        
+        // 2. 綁定「重置雲端投票紀錄」按鈕的功能
+        document.getElementById('reset-sheet-btn').addEventListener('click', () => {
+            // 跳出一個二次確認的警告視窗，防止誤觸
+            if (confirm('【高風險】您確定要重置所有「雲端投票紀錄」嗎？\n\n此操作需要您手動清空 Google Sheet 中的「數據紀錄」工作表，且無法復原！')) {
+                alert('為了安全，請手動前往您的 Google Sheet 後台刪除資料。\n點擊確定將為您打開連結。');
+                // 在新分頁打開您的 Google Sheet 網址
+                window.open(GOOGLE_SHEET_URL, '_blank');
+            }
+        });
+
+        // 3. 綁定「重置本地企劃數據」按鈕的功能
+        document.getElementById('reset-projects-btn').addEventListener('click', () => {
+            // 同樣跳出二次確認視窗
+            if(confirm('您確定要重置所有「本地企劃數據」嗎？\n\n這會將主頁面所有您生成的企劃影片全部清除，恢復到初始狀態。這個操作只影響您的瀏覽器，不影響雲端投票紀錄。')) {
+                // 從瀏覽器的 localStorage 中，移除儲存企劃影片的資料
+                localStorage.removeItem('youtubeSimulatorFinal');
+                alert('本地企劃數據已重置！\n請重新整理主頁面(index.html)以查看效果。');
+            }
+        });
+
+        // 4. 開始從雲端後台獲取統計數據
+        fetchStats();
+    });
+    
+    // ===================================================================================
+    // ===                           第三部分：數據獲取與渲染總管                           ===
+    // ===================================================================================
+
+    /**
+     * @description 從 Google Apps Script 後台獲取統計數據的核心函數。
+     */
+    function fetchStats() {
+        // 使用 fetch API 向我們的 SCRIPT_URL 發送一個 GET 請求
+        fetch(SCRIPT_URL)
+            .then(res => res.json()) // 將收到的回應解析成 JSON 格式
+            .then(result => {
+                // 如果後台回傳的狀態是 "success"
+                if (result.status === "success") {
+                    document.getElementById('loading').style.display = 'none'; // 隱藏「讀取中」提示
+                    document.getElementById('stats-content').style.display = 'block'; // 顯示統計內容區
+                    window.currentData = result.data; // 將數據存到全域變數，方便主題切換時重繪圖表
+                    renderAll(result.data); // 呼叫總渲染函數，開始繪製畫面
+                } else { 
+                    // 如果後台回傳錯誤，就拋出一個錯誤
+                    throw new Error(result.message); 
+                }
+            }).catch(e => {
+                // 如果 fetch 過程或上面任何一步出錯，就在畫面上顯示錯誤訊息
+                document.getElementById('loading').innerHTML = `<p class="text-red-500">數據加載失敗: ${e.message}</p><p>請檢查您的 Apps Script 部署與網址是否正確。</p>`;
+            });
+    }
+    
+    /**
+     * @description 數據分析與渲染的總指揮官。
+     * @param {Object} data - 從後台獲取到的、整理好的統計數據
+     */
+    function renderAll(data) {
+        // 1. 分析數據
+        const projectNames = Object.keys(data); // 獲取所有企劃的名稱
+        const allVideos = Object.values(data).flatMap(p => Object.keys(p)); // 獲取所有被點擊過的影片標題
+        const totalVotes = allVideos.length > 0 ? Object.values(data).flatMap(p => Object.values(p)).reduce((a, b) => a + b, 0) : 0; // 計算總票數
+
+        // 2. 呼叫各個渲染函數，分頭進行繪製
+        renderSummaryCards(projectNames.length, allVideos.length, totalVotes);
+        renderCharts(data);
+        renderDetails(data);
+    }
+    
+    // ===================================================================================
+    // ===                           第四部分：畫面渲染函數 (繪製UI)                         ===
+    // ===================================================================================
+    // 說明：這一區的函數，每一個都只負責一個特定的UI區塊，分工明確。
+
+    /**
+     * @description 渲染頂部的四個總覽數據卡片。
+     */
+    function renderSummaryCards(projectCount, videoCount, voteCount) {
+        const container = document.getElementById('summary-cards');
+        const cards = [
+            { title: '總企劃數', value: projectCount, icon: 'fa-lightbulb' },
+            { title: '總標題數', value: videoCount, icon: 'fa-file-alt' },
+            { title: '總點擊數', value: voteCount, icon: 'fa-mouse-pointer' },
+            { title: '平均點擊', value: videoCount > 0 ? (voteCount/videoCount).toFixed(1) : 0, icon: 'fa-chart-pie' },
+        ];
+        // 使用 map 和 join，將陣列資料快速組合成 HTML 字串，並一次性更新到畫面上
+        container.innerHTML = cards.map(c => `
+            <div class="bg-white dark:bg-yt-light-black p-4 rounded-xl shadow-sm">
+                <i class="fas ${c.icon} text-2xl mb-2"></i>
+                <p class="text-gray-500 dark:text-gray-400">${c.title}</p>
+                <p class="text-3xl font-bold">${c.value}</p>
+            </div>
+        `).join('');
+    }
+
+    /**
+     * @description 渲染兩個數據圖表 (圓餅圖與長條圖)。
+     */
+    function renderCharts(data) {
+        const isDark = document.documentElement.classList.contains('dark');
+        Chart.defaults.color = isDark ? '#fff' : '#606060'; // 設定圖表的預設文字顏色
+
+        // --- 繪製「企劃票數佔比」圓餅圖 ---
+        const projectVotes = Object.entries(data).map(([name, videos]) => ({
+            name,
+            votes: Object.values(videos).reduce((a,b) => a+b, 0)
+        }));
+        
+        // 如果已存在舊的圖表實例，先銷毀它，避免重疊
+        if(window.projectsChartInstance) window.projectsChartInstance.destroy();
+        // 創建新的圖表實例
+        window.projectsChartInstance = new Chart(document.getElementById('projectsChart'), {
+            type: 'doughnut', // 圖表類型：甜甜圈圖
+            data: {
+                labels: projectVotes.map(p => p.name),
+                datasets: [{ data: projectVotes.map(p => p.votes), borderWidth: 1 }]
+            },
+            options: { plugins: { title: { display: true, text: '各企劃票數佔比' } } }
+        });
+
+        // --- 繪製「TOP 5 熱門標題」長條圖 ---
+        const topVideos = Object.keys(data).length > 0 ? Object.values(data).flatMap(p => Object.entries(p))
+            .sort((a, b) => b[1] - a[1]).slice(0, 5) : [];
+        
+        if(window.topVideosChartInstance) window.topVideosChartInstance.destroy();
+        window.topVideosChartInstance = new Chart(document.getElementById('topVideosChart'), {
+            type: 'bar', // 圖表類型：長條圖
+            data: {
+                labels: topVideos.map(v => v[0].substring(0, 15) + '...'), // 標籤只顯示前15個字
+                datasets: [{ label: '點擊數', data: topVideos.map(v => v[1]), backgroundColor: '#FF0000' }]
+            },
+            options: { plugins: { title: { display: true, text: 'TOP 5 熱門標題' } } }
+        });
+    }
+
+    /**
+     * @description 渲染最下方的詳細數據列表。
+     */
+    function renderDetails(data) {
+        const container = document.getElementById('details-container');
+        container.innerHTML = `<h3 class="text-xl font-bold mb-4">企劃詳情列表</h3>`;
+        // 如果沒有任何數據，就顯示提示訊息
+        if (Object.keys(data).length === 0) {
+            container.innerHTML += `<p class="text-yt-gray">尚無投票紀錄。</p>`;
+            return;
+        }
+        // 遍歷每一個企劃
+        Object.entries(data).forEach(([projectName, videos]) => {
+            const sortedVideos = Object.entries(videos).sort((a,b) => b[1] - a[1]); // 將影片按票數排序
+            const totalVotes = sortedVideos.reduce((acc, curr) => acc + curr[1], 0); // 計算該企劃總票數
+            let videoListHTML = sortedVideos.map(([title, votes]) => 
+                `<li class="flex justify-between py-2 border-b border-gray-200 dark:border-yt-light-black"><span>${title}</span><span class="font-bold">${votes} 票</span></li>`
+            ).join('');
+
+            // 組合成一個企劃的完整 HTML 區塊
+            container.innerHTML += `
+                <div class="mb-4">
+                    <h4 class="font-bold text-lg">${projectName} - <span class="text-blue-500">${totalVotes} 總票數</span></h4>
+                    <ul class="mt-2">${videoListHTML}</ul>
+                </div>
+            `;
+        });
+    }
+    
+    // ===================================================================================
+    // ===                            第五部分：輔助工具函數                               ===
+    // ===================================================================================
+
+    /**
+     * @description 初始化深色/淺色模式的切換邏輯。
+     */
+    function initTheme() {
+        const themeToggle = document.getElementById('theme-toggle');
+        const docEl = document.documentElement;
+        // 根據傳入的主題，為 <html> 標籤添加或移除 'dark' class
+        const applyTheme = (theme) => {
+            if (theme === 'dark') docEl.classList.add('dark');
+            else docEl.classList.remove('dark');
+        };
+        // 按鈕點擊時，切換主題並儲存到 localStorage
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = localStorage.getItem('theme') === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('theme', currentTheme);
+            applyTheme(currentTheme);
+            // 【重要】切換主題後，重繪圖表以適應新的顏色設定
+            if(window.currentData) renderCharts(window.currentData);
+        });
+        // 頁面載入時，讀取儲存的主題設定
+        applyTheme(localStorage.getItem('theme') || 'light');
+    }
+    </script>
+</body>
+</html>

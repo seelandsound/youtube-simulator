@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube 企劃模擬器</title>
+    
+    <!-- 外部資源: 先載入所有需要的外部函式庫 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- TailwindCSS 配置 -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'yt-red': '#FF0000',
+                        'yt-black': '#0F0F0F',
+                        'yt-white': '#FFFFFF',
+                        'yt-light-black': '#272727',
+                        'yt-gray': '#606060',
+                        'yt-dark-gray': '#AAAAAA',
+                        'yt-hover-bg': 'rgba(255, 255, 255, 0.1)',
+                        'yt-light-hover-bg': 'rgba(0, 0, 0, 0.1)',
+                    },
+                },
+            },
+        }
+    </script>
+
+    <!-- 自定義樣式 -->
+    <style>
+        body { font-family: "YouTube Sans","Roboto", sans-serif; }
+        .sidebar { transition: transform 0.3s ease-in-out; }
+        .main-content { transition: margin-left 0.3s ease-in-out; }
+        .sidebar.collapsed { transform: translateX(-100%); }
+        .sidebar.collapsed + .main-content { margin-left: 0 !important; }
+        @media (min-width: 1313px) { /* YouTube's breakpoint */
+            .sidebar.collapsed + .main-content { margin-left: 72px !important; }
+            .sidebar.collapsed { transform: translateX(0); width: 72px !important; }
+            .sidebar.collapsed .sidebar-item-text { display: none; }
+            .sidebar.collapsed .sidebar-title { display: none; }
+        }
+        .thumbnail-container { transition: transform 0.2s ease; }
+        .video-card:hover .thumbnail-container { transform: scale(1.05); z-index: 10; border-radius: 0; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .edit-btn { opacity: 0; transition: opacity 0.2s ease; }
+        .thumbnail-container:hover .edit-btn { opacity: 1; }
+        body.modal-open { overflow: hidden; }
+    </style>
+</head>
+<body class="bg-[#f9f9f9] dark:bg-yt-black text-yt-black dark:text-white">
+
+    <!-- HTML 骨架: 頁面的所有可見內容 -->
+    <header class="sticky top-0 z-40 flex items-center justify-between h-14 px-4 bg-white dark:bg-yt-black border-b border-gray-200 dark:border-yt-light-black">
+        <div class="flex items-center">
+            <button id="menu-toggle" class="p-2 mr-4 rounded-full hover:bg-gray-100 dark:hover:bg-yt-light-black">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+            <a href="#" class="flex items-center">
+                <i class="fab fa-youtube text-yt-red text-3xl"></i>
+                <span class="font-semibold text-xl ml-1 tracking-tighter">YouTube</span>
+                <sup class="text-xs text-yt-gray dark:text-yt-dark-gray ml-1">TW</sup>
+            </a>
+        </div>
+        <div class="flex-1 flex justify-center px-4 max-w-2xl">
+            <div class="w-full flex">
+                <input id="project-input" type="text" placeholder="輸入企劃名稱..." class="w-full px-4 py-1.5 border border-gray-300 dark:border-gray-700 bg-transparent rounded-l-full focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                <button id="generate-btn" class="px-6 bg-gray-100 dark:bg-yt-light-black border-y border-r border-gray-300 dark:border-gray-700 rounded-r-full hover:bg-gray-200 dark:hover:bg-gray-700">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button id="theme-toggle" class="p-2 w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-yt-light-black">
+                <i class="fas fa-sun text-xl hidden dark:block"></i>
+                <i class="fas fa-moon text-xl dark:hidden"></i>
+            </button>
+            <a href="stats.html" target="_blank" class="p-2 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-yt-light-black" title="查看統計">
+                <i class="fas fa-chart-bar text-xl"></i>
+            </a>
+            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold text-white">您</div>
+        </div>
+    </header>
+
+    <div class="flex" style="height: calc(100vh - 56px);">
+        <aside id="sidebar" class="sidebar fixed top-14 left-0 w-60 h-full bg-white dark:bg-yt-black z-30 overflow-y-auto border-r border-gray-200 dark:border-yt-light-black">
+            <nav class="p-3">
+                <a href="#" class="flex items-center px-3 py-2.5 rounded-lg bg-gray-100 dark:bg-yt-light-black">
+                    <i class="fas fa-home w-8 text-center text-xl"></i><span class="ml-4 font-medium sidebar-item-text">首頁</span>
+                </a>
+                <a href="#" class="flex items-center px-3 py-2.5 mt-1 rounded-lg hover:bg-gray-100 dark:hover:bg-yt-light-black">
+                    <i class="fas fa-compass w-8 text-center text-xl"></i><span class="ml-4 font-medium sidebar-item-text">探索</span>
+                </a>
+                <a href="#" class="flex items-center px-3 py-2.5 mt-1 rounded-lg hover:bg-gray-100 dark:hover:bg-yt-light-black">
+                    <i class="fas fa-play-circle w-8 text-center text-xl"></i><span class="ml-4 font-medium sidebar-item-text">訂閱內容</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main id="main-content" class="main-content flex-1 ml-60 p-6 overflow-y-auto">
+            <div id="video-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8"></div>
+        </main>
+    </div>
+
+    <div id="edit-modal" class="fixed inset-0 z-50 bg-black bg-opacity-70 flex items-center justify-center hidden">
+        <div class="bg-white dark:bg-yt-light-black rounded-lg shadow-xl w-full max-w-lg p-6">
+            <h2 class="text-xl font-bold mb-4">編輯影片</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-yt-gray dark:text-yt-dark-gray">標題</label>
+                    <input type="text" id="edit-title-input" class="w-full mt-1 p-2 border rounded dark:bg-[#121212] dark:border-yt-gray">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-yt-gray dark:text-yt-dark-gray">封面預覽</label>
+                    <canvas id="edit-thumbnail-canvas" class="w-full aspect-video mt-1 border dark:border-yt-gray rounded"></canvas>
+                </div>
+                <div class="flex items-center justify-between">
+                    <button id="upload-thumbnail-btn" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">上傳封面</button>
+                    <input type="file" id="upload-thumbnail-input" class="hidden" accept="image/*">
+                    <button id="regenerate-thumbnail-btn" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">重新生成</button>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-4">
+                <button id="cancel-edit-btn" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">取消</button>
+                <button id="save-edit-btn" class="px-4 py-2 bg-yt-red text-white rounded hover:bg-red-700">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript：所有功能性腳本都放在 body 的最末端，以確保頁面元素都已載入 -->
+    <script>
+    // ===================================================================================
+    // ===                           第一部分：核心設定與全域變數                           ===
+    // ===================================================================================
+    // 說明：這裡是整個專案的中央控制室。我們在這裡定義與後台溝通的密碼、儲存所有影片的倉庫，以及各種設定。
+
+    /**
+     * @description 與 Google Apps Script 後台溝通的專屬網址。
+     * @instructions 請將您的 Apps Script 網址貼在這裡。
+     */
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyIjJK9EzOHiZVFXgRthq9bu4MSvUGBE5Mtgyzmi1-fOuKVNLPORrufFNC_-9PaS9dC/exec';
+
+    /**
+     * @description 全局變數，用來在記憶體中儲存當前頁面上所有的影片物件。
+     * @type {Array<Object>}
+     */
+    let videos = [];
+
+    /**
+     * @description 全局變數，用來記錄當前正在被編輯的影片的ID。
+     * @type {string | null}
+     */
+    let currentEditingVideoId = null;
+    
+    /**
+     * @description 【可修改區】用來隨機生成頻道名稱的列表。
+     * @instructions 您可以隨意增加、刪除或修改這裡的頻道名稱。
+     */
+    const channelNames = ["超能學堂", "思想麵包", "觀點實驗室", "腦洞大開", "知識膠囊", "極客玩家", "生活駭客"];
+
+    /**
+     * @description 【可修改區】我們的「標題零件自助餐」。所有隨機標題都從這裡組合而成。
+     * @instructions 這是最核心的創意來源！您可以自由修改、增加各種零件，打造您專屬的標題風格。
+     *   [P] 會被替換成您的企劃名稱。
+     *   [N], [T], [R], [S], [C] 等會被隨機替換成對應零件庫中的內容。
+     */
+    const titleParts = {
+        prefixes: ["【硬核】", "【深度解析】", "【終極指南】", "[VLOG]", "【完整教學】", "【開箱】", ""],
+        corePatterns: [
+            "關於「[P]」你不知道的[N]個秘密", "我花了[T]挑戰「[P]」", "「[P]」真的值得嗎？",
+            "一個影片讓你完全搞懂「[P]」", "「[P]」VS「[C]」的世紀對決！", "如何用「[P]」達到[R]？",
+            "當「[P]」遇到[S]會發生什麼事？"
+        ],
+        time: ["1000小時", "7天", "24小時", "一個月", "30分鐘"],
+        numbers: ["3", "5", "7", "10"],
+        results: ["財富自由", "效率倍增", "徹底改變人生", "驚人成果"],
+        surprises: ["AI", "科學", "物理學", "哲學"],
+        hooks: ["...結果竟然是這樣！", "...看完顛覆三觀！", "...沒想到會發生這種事！", ""],
+        emojis: ["😱", "🔥", "🚀", "🤯", "💡", "💰", "🤔"],
+        styles: ['mrbeast', 'laogao', 'tech'] // 對應封面風格
+    };
+
+
+    // ===================================================================================
+    // ===                           第二部分：程式進入點與初始化                           ===
+    // ===================================================================================
+    // 說明：當整個 HTML 頁面下載完成後，瀏覽器會從這裡開始執行我們的程式。
+
+    /**
+     * @description 頁面載入完成後的主函數，負責協調所有初始化工作。
+     */
+    document.addEventListener('DOMContentLoaded', () => {
+        // 按照順序，一步步地讓頁面活起來
+        loadData();                 // 1. 看看瀏覽器有沒有存舊資料，有的話就拿出來
+        renderAllVideos();          // 2. 將所有影片資料渲染成畫面
+        initEventListeners();       // 3. 為頁面上的所有按鈕綁定對應的功能
+        initTheme();                // 4. 初始化深色/淺色模式
+        initSidebar();              // 5. 初始化側邊欄的收合功能
+    });
+
+        // ===== 本地數據處理 =====
+        function loadData() {
+            const savedData = localStorage.getItem('youtubeSimulatorFinal');
+            if (savedData) {
+                // 如果有舊資料，就讀取它
+        videos = JSON.parse(savedData);
+    } else {
+        // 如果沒有舊資料，就初始化一個乾淨的空陣列
+        videos = []; 
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem('youtubeSimulatorFinal', JSON.stringify(videos));
+        }
+
+        // ===== 事件監聽器 =====
+        function initEventListeners() {
+            document.getElementById('generate-btn').addEventListener('click', handleGenerateClick);
+            document.getElementById('project-input').addEventListener('keypress', e => e.key === 'Enter' && handleGenerateClick());
+            
+            document.getElementById('cancel-edit-btn').addEventListener('click', closeEditModal);
+            document.getElementById('save-edit-btn').addEventListener('click', handleSaveEdit);
+            document.getElementById('upload-thumbnail-btn').addEventListener('click', () => document.getElementById('upload-thumbnail-input').click());
+            document.getElementById('upload-thumbnail-input').addEventListener('change', handleThumbnailUpload);
+            document.getElementById('regenerate-thumbnail-btn').addEventListener('click', handleRegenerateThumbnail);
+        }
+
+        // ===== 渲染邏輯 =====
+        function renderAllVideos() {
+            const grid = document.getElementById('video-grid');
+            grid.innerHTML = '';
+            videos.forEach(video => grid.appendChild(createVideoCard(video)));
+        }        
+
+        function createVideoCard(video) {
+            const card = document.createElement('div');
+            card.className = 'video-card flex flex-col cursor-pointer';
+            card.dataset.videoId = video.id;
+
+            card.innerHTML = `
+                <div class="relative thumbnail-container rounded-xl overflow-hidden aspect-video bg-gray-200 dark:bg-yt-light-black">
+                    <img src="${video.thumbnail}" class="w-full h-full object-cover" alt="${video.title}" />
+                    <div class="absolute inset-0 voted-overlay flex items-center justify-center opacity-0 transition-opacity pointer-events-none bg-black bg-opacity-70">
+                        <i class="fas fa-check text-white text-4xl"></i>
+                    </div>
+                    <button class="edit-btn absolute top-2 right-2 bg-black bg-opacity-60 text-white px-2 py-1 text-xs rounded hover:bg-opacity-80">編輯</button>
+                </div>
+                <div class="flex items-start space-x-3 mt-3">
+                    <div class="w-9 h-9 rounded-full flex-shrink-0" style="background-color: ${video.avatarColor};"></div>
+                    <div>
+                        <h3 class="font-bold text-base leading-snug line-clamp-2 video-title">${video.title}</h3>
+                        <p class="text-sm text-yt-gray dark:text-yt-dark-gray mt-1">${video.channel}</p>
+                        <p class="text-sm text-yt-gray dark:text-yt-dark-gray video-meta">觀看次數：${video.views}次</p>
+                    </div>
+                </div>
+            `;
+            
+            card.addEventListener('click', handleVoteClick);
+            card.querySelector('.edit-btn').addEventListener('click', e => {
+                e.stopPropagation();
+                openEditModal(video.id);
+            });
+            return card;
+        }    
+
+    // ===================================================================================
+    // ===                          第三部分：核心功能函數 (使用者互動)                        ===
+    // ===================================================================================
+    // 說明：這裡是處理使用者主要操作的地方，例如新增企劃、投票、編輯等。
+
+    /**
+     * @description 處理「生成」按鈕的點擊事件。
+     */
+    function handleGenerateClick() {
+        const input = document.getElementById('project-input');
+        const projectName = input.value.trim();
+        if (!projectName) return; // 如果沒輸入內容，就什麼都不做
+
+        const newVideos = generateVideoVariations(projectName); // 請創意引擎生成新影片
+        videos.unshift(...newVideos); // 使用 unshift 將新影片加到陣列的「最前面」
+        saveData();     // 儲存更新後的影片列表
+        renderAllVideos();            // 重新渲染整個畫面
+        input.value = '';             // 清空輸入框
+    }
+
+    /**
+     * @description 處理「影片卡片」的點擊事件（投票）。
+     * @param {MouseEvent} event - 點擊事件物件
+     */
+    function handleVoteClick(event) {
+        const card = event.currentTarget;
+        const videoId = card.dataset.videoId;
+        const videoIndex = videos.findIndex(v => v.id === videoId);
+        if (videoIndex === -1) return; // 如果找不到影片，就什麼都不做
+
+        // 1. 更新數據
+        videos[videoIndex].views++;
+        
+        // 2. 更新畫面
+        card.querySelector('.video-meta').textContent = `觀看次數：${videos[videoIndex].views}次`; // 更新計數
+        saveData();
+
+        const overlay = card.querySelector('.voted-overlay');
+        overlay.style.opacity = '1'; // 顯示投票成功動畫
+        setTimeout(() => { overlay.style.opacity = '0'; }, 1500); // 1.5秒後淡出
+
+        if (SCRIPT_URL && SCRIPT_URL.includes('macros')) {
+                fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({
+                        projectName: videos[videoIndex].projectName,
+                        videoTitle: videos[videoIndex].title,
+                        thumbnailID: videos[videoIndex].thumbnailId
+                    })
+                }).catch(err => console.error("後台發送失敗:", err));
+            }
+    }
+
+    /**
+     * @description 處理「編輯」按鈕的點擊事件，打開編輯視窗。
+     * @param {string} videoId - 要編輯的影片ID
+     */
+    function openEditModal(videoId) {
+        currentEditingVideoId = videoId;
+        const video = videos.find(v => v.id === videoId);
+        if (!video) return;
+
+        // 將影片的現有資料，填入編輯視窗的對應欄位
+        document.getElementById('edit-title-input').value = video.title;
+        const canvas = document.getElementById('edit-thumbnail-canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        img.crossOrigin = "Anonymous"; // 允許跨來源圖片繪製
+        img.onload = () => { // 圖片載入後才執行繪圖
+            canvas.width = img.naturalWidth > 500 ? 500 : img.naturalWidth;
+            canvas.height = canvas.width * (img.naturalHeight / img.naturalWidth);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        };
+        img.src = video.thumbnail;
+        
+        // 顯示編輯視窗
+        document.getElementById('edit-modal').classList.remove('hidden');
+        document.body.classList.add('modal-open'); // 防止背景滾動
+    }
+
+    function closeEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+            document.body.classList.remove('modal-open');
+        }
+    
+    /**
+     * @description 處理編輯視窗中的「儲存」按鈕點擊事件。
+     */
+    function handleSaveEdit() {
+        const videoIndex = videos.findIndex(v => v.id === currentEditingVideoId);
+        if (videoIndex === -1) return;
+
+        // 從編輯視窗中獲取新的資料
+        videos[videoIndex].title = document.getElementById('edit-title-input').value;
+            const canvas = document.getElementById('edit-thumbnail-canvas');
+            videos[videoIndex].thumbnail = canvas.toDataURL('image/jpeg');
+        
+        saveData();
+        renderAllVideos();
+        closeEditModal();
+    }
+    
+    /**
+     * @description 處理編輯視窗中的「上傳封面」功能。
+     * @param {Event} event - 檔案選擇事件物件
+     */
+    function handleThumbnailUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const canvas = document.getElementById('edit-thumbnail-canvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = 640; 
+                canvas.height = 360; // 將上傳的圖片標準化為16:9
+                ctx.drawImage(img, 0, 0, 640, 360);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    /**
+     * @description 處理編輯視窗中的「重新生成」按鈕點擊事件。
+     */
+    function handleRegenerateThumbnail() {
+        const video = videos.find(v => v.id === currentEditingVideoId);
+        if (!video) return;
+        const canvas = document.getElementById('edit-thumbnail-canvas');
+        // 直接在編輯視窗的畫布上，重新畫一次封面
+        generateThumbnailOnCanvas(canvas, video.projectName, video.thumbnailId);
+    }
+
+    // ===================================================================================
+    // ===                          第四部分：核心業務邏輯 (影片與標題生成)                      ===
+    // ===================================================================================
+    // 說明：這裡是我們專案的「創意引擎」，負責根據企劃名稱，生成多樣化的影片資料。
+
+    /**
+     * @description 根據企劃名稱，生成多個隨機的影片標題與封面組合。
+     * @param {string} projectName - 使用者輸入的企劃名稱
+     * @returns {Array<Object>} - 包含多個新影片物件的陣列
+     */
+            function generateVideoVariations(projectName) {
+            // 1. 建立一個豐富的「標題點子庫」。這是唯一新增的資料。
+            const titleIdeas = [
+                `【硬核解析】關於「${projectName}」你不知道的3個秘密`,
+                `[VLOG] 我花了7天，只為了搞懂「${projectName}」...結果竟然是這樣！`,
+                `「${projectName}」真的值得嗎？一個誠實的深度評測`,
+                `一個影片讓你完全搞懂「${projectName}」的底層邏輯`,
+                `我用「${projectName}」挑戰傳統方法，沒想到... 😱`,
+                `【終極指南】從零開始掌握「${projectName}」`,
+                `當「${projectName}」遇到AI，會擦出什麼火花？🤯`,
+                `為什麼說「${projectName}」是下一個風口？`,
+                `花了10萬元，我們買來了關於「${projectName}」的血淚教訓 🔥`,
+                `新手必看！關於「${projectName}」最常見的5個誤區`,
+                `開箱「${projectName}」：它真的像傳說中那麼神嗎？`,
+                `「${projectName}」的祕史：一段不為人知的過去`
+            ];
+            
+            // 這是您原本就有的封面風格庫，我們保留它。
+            const styles = ['mrbeast', 'laogao', 'tech'];
+
+            // 2. 隨機打亂我們的「標題點子庫」。
+            for (let i = titleIdeas.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [titleIdeas[i], titleIdeas[j]] = [titleIdeas[j], titleIdeas[i]];
+            }
+
+            // 3. 從打亂後的點子庫中，選取前3個，並將它們打包成您原本程式碼可以識別的 `templates` 格式。
+            const selectedTemplates = titleIdeas.slice(0, 3).map((idea, index) => {
+                return {
+                    t: idea, // 標題內容
+                    style: styles[index % styles.length] // 封面風格，循環使用
+                };
+            });
+
+            // 4. 【最關鍵的一步】我們使用您原本檔案中，那段被證明可以100%正常運作的 .map() 邏輯，來處理我們剛剛生成的隨機模板。
+            return selectedTemplates.map((tpl, i) => {
+                // 下面這一行，完全遵從您原始碼的呼叫方式，確保不會有任何接口不符的問題。
+                const thumbnailURL = generateThumbnailDataURL(projectName, tpl.style);
+                
+                return {
+                    id: `vid_${Date.now()}_${i}`,
+                    projectName: projectName,
+                    title: tpl.t,
+                    thumbnailId: tpl.style,
+                    thumbnail: thumbnailURL,
+                    channel: channelNames[Math.floor(Math.random() * channelNames.length)],
+                    views: 0,
+                    avatarColor: `hsl(${Math.random() * 360}, 60%, 50%)`,
+                }
+            });
+        }
+
+    // ===================================================================================
+    // ===                            第五部分：輔助工具函數 (雜項)                          ===
+    // ===================================================================================
+    // 說明：這裡是提供各種支援的工具人函數，例如儲存資料、繪製封面、初始化UI元件等。        
+
+    function generateThumbnailDataURL(text, style) {
+            const canvas = document.createElement('canvas');
+            generateThumbnailOnCanvas(canvas, text, style);
+            return canvas.toDataURL('image/jpeg');
+        }
+        
+    function generateThumbnailOnCanvas(canvas, text, style) {
+            canvas.width = 640; canvas.height = 360; // 16:9
+            const ctx = canvas.getContext('2d');
+            const styles = {
+                mrbeast: { bg: ['#f7b733', '#fc4a1a'], emoji: '😱' },
+                laogao: { bg: ['#2c3e50', '#3498db'], emoji: '👁️' },
+                tech: { bg: ['#111', '#555'], emoji: '💻' }
+            };
+            const s = styles[style] || styles.tech;
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            gradient.addColorStop(0, s.bg[0]); gradient.addColorStop(1, s.bg[1]);
+            ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = 'bold 48px "Microsoft JhengHei", sans-serif'; ctx.fillStyle = '#fff';
+            ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10;
+            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+            ctx.font = '80px sans-serif'; ctx.shadowBlur = 0;
+            ctx.fillText(s.emoji, 60, 70);
+        }
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }        
+        
+    function initTheme() {
+        const themeToggle = document.getElementById('theme-toggle');
+        const docEl = document.documentElement;
+        const applyTheme = (theme) => {
+                if (theme === 'dark') docEl.classList.add('dark');
+                else docEl.classList.remove('dark');
+            };
+            themeToggle.addEventListener('click', () => {
+                const currentTheme = localStorage.getItem('theme') === 'dark' ? 'light' : 'dark';
+                localStorage.setItem('theme', currentTheme);
+                applyTheme(currentTheme);
+            });
+            applyTheme(localStorage.getItem('theme') || 'light');
+        }
+        
+    function initSidebar() {
+        const menuToggle = document.getElementById('menu-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.getElementById('main-content');
+        let isMini = window.innerWidth < 1313;
+
+        const applySidebarState = () => {
+                if(isCollapsed){
+                    sidebar.classList.add('collapsed');
+                    mainContent.style.marginLeft = '0';
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    mainContent.style.marginLeft = '240px';
+                }
+            };
+        
+        menuToggle.addEventListener('click', () => {
+                isCollapsed = !isCollapsed;
+                applySidebarState();
+            });
+            window.addEventListener('resize', () => {
+                isCollapsed = window.innerWidth < 1313;
+                applySidebarState();
+            });
+            applySidebarState();
+        }
+    </script>
+</body>
+</html>
