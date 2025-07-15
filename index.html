@@ -32,7 +32,7 @@
 
     <!-- 自定義樣式 -->
     <style>
-        body { font-family: "YouTube Sans","Roboto", sans-serif; }
+        body { font-family: "YouTube Sans","Roboto", sans-serif;-webkit-font-smoothing:antialiased }
         .sidebar { transition: transform 0.3s ease-in-out; }
         .main-content { transition: margin-left 0.3s ease-in-out; }
         .sidebar.collapsed { transform: translateX(-100%); }
@@ -99,8 +99,9 @@
             </nav>
         </aside>
 
-        <main id="main-content" class="main-content flex-1 ml-60 p-6 overflow-y-auto">
-            <div id="video-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8"></div>
+        <main id="main-content" class="main-content ml-60 p-6 overflow-y-auto">
+             <div id="video-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-4 gap-y-8"></div>
+             <div id="status-display" class="text-center text-yt-gray py-20"><i class="fas fa-spinner fa-spin text-4xl"></i><p class="mt-2">正在從雲端同步資料...</p></div>
         </main>
     </div>
 
@@ -140,7 +141,7 @@
      * @description 與 Google Apps Script 後台溝通的專屬網址。
      * @instructions 請將您的 Apps Script 網址貼在這裡。
      */
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyIjJK9EzOHiZVFXgRthq9bu4MSvUGBE5Mtgyzmi1-fOuKVNLPORrufFNC_-9PaS9dC/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxwEBR7kUfAfXJ9gVEDZ72zPJUhoXYspN7-Px--kiWsEXuk364VL88ZonCPamim-goy4Q/exec';
 
     /**
      * @description 全局變數，用來在記憶體中儲存當前頁面上所有的影片物件。
@@ -179,61 +180,145 @@
         surprises: ["AI", "科學", "物理學", "哲學"],
         hooks: ["...結果竟然是這樣！", "...看完顛覆三觀！", "...沒想到會發生這種事！", ""],
         emojis: ["😱", "🔥", "🚀", "🤯", "💡", "💰", "🤔"],
+        competitors: ['傳統方法', '不限金額'],
         styles: ['mrbeast', 'laogao', 'tech'] // 對應封面風格
     };
 
 
     // ===================================================================================
-    // ===                           第二部分：程式進入點與初始化                           ===
+    // ===                           第二部分：程式進入點與初始化 (流程改造版)               ===
     // ===================================================================================
-    // 說明：當整個 HTML 頁面下載完成後，瀏覽器會從這裡開始執行我們的程式。
 
     /**
-     * @description 頁面載入完成後的主函數，負責協調所有初始化工作。
+     * @description 使用 async/await 語法，確保我們的初始化流程是「同步」的，一步做完再做下一步。
      */
-    document.addEventListener('DOMContentLoaded', () => {
-        // 按照順序，一步步地讓頁面活起來
-        loadData();                 // 1. 看看瀏覽器有沒有存舊資料，有的話就拿出來
-        renderAllVideos();          // 2. 將所有影片資料渲染成畫面
-        initEventListeners();       // 3. 為頁面上的所有按鈕綁定對應的功能
-        initTheme();                // 4. 初始化深色/淺色模式
-        initSidebar();              // 5. 初始化側邊欄的收合功能
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            console.log("開始初始化應用程式...");
+            initUI(); // 先初始化無關數據的UI，例如主題和側邊欄
+            await loadVideosFromCloud(); // 等待從雲端載入所有影片資料
+            renderAllVideos(); // 根據雲端資料渲染畫面
+            initEventListeners(); // 為所有元素（包括新渲染的）綁定事件
+            console.log("應用程式初始化完成！");
+        } catch (error) {
+            // 如果在整個初始化流程中發生任何錯誤，都在這裡捕獲並提醒使用者
+            console.error("初始化失敗:", error);
+            alert("頁面初始化失敗，請嘗試強制重新整理。錯誤訊息：" + error.message);
+        }
     });
 
-        // ===== 本地數據處理 =====
-        function loadData() {
-            const savedData = localStorage.getItem('youtubeSimulatorFinal');
-            if (savedData) {
-                // 如果有舊資料，就讀取它
-        videos = JSON.parse(savedData);
-    } else {
-        // 如果沒有舊資料，就初始化一個乾淨的空陣列
-        videos = []; 
+    /**
+     * @description 【改造後】數據處理函數。它現在只負責一件事：準備好 videos 這個全域變數。
+     * @returns {Promise<void>} - 回傳一個 Promise，讓上層的 await 知道何時完成。
+     */
+    /*async function loadVideosFromCloud() {
+        const statusDisplay = document.getElementById('status-display');
+        try {
+            console.log("正在從雲端獲取影片列表...");
+            const response = await fetch(SCRIPT_URL);
+            if (!response.ok) throw new Error(`伺服器錯誤: ${response.status}`);
+            
+            const result = await response.json();
+            if (result.status === 'success') {
+                console.log("成功從雲端獲取資料:", result.data);
+                videos = result.data || []; // 確保 videos 至少是空陣列，不會是 undefined         
+            } else {
+                throw new Error(result.message || '後台回傳錯誤');
             }
+        } catch (error) {
+            console.error("從雲端載入影片失敗:", error);
+            videos = []; // 如果載入失敗，確保 videos 是空陣列
+            statusDisplay.innerHTML = `<i class="fas fa-exclamation-triangle text-4xl text-red-500"></i><p class="mt-2">無法連接到雲端資料庫。<br>${error.message}</p>`;
         }
+    }*/
 
-        function saveData() {
-            localStorage.setItem('youtubeSimulatorFinal', JSON.stringify(videos));
+        function fetchWithJsonp(url) {
+        return new Promise((resolve, reject) => {
+            const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+            const script = document.createElement('script');
+            
+            // 將 callback 函式掛載到 window 上，以便後台回傳的腳本可以呼叫
+            window[callbackName] = (data) => {
+                delete window[callbackName]; // 清理
+                document.body.removeChild(script);
+                resolve(data); // Promise 成功，並回傳數據
+            };
+
+            script.src = `${url}${url.includes('?') ? '&' : '?'}callback=${callbackName}`;
+            script.onerror = reject; // 處理載入失敗的情況
+            
+            document.body.appendChild(script);
+        });
+    }
+
+    /**
+     * @description 【改造】現在使用 JSONP 來獲取影片列表。
+     */
+    async function loadVideosFromCloud() {
+        const statusDisplay = document.getElementById('status-display');
+        try {
+            console.log("正在使用 JSONP 獲取影片列表...");
+            const result = await fetchWithJsonp(SCRIPT_URL);
+            if (result.status === 'success') {
+                videos = result.data || [];
+            } else {
+                throw new Error(result.message || '後台回傳錯誤');
+            }
+        } catch (error) {
+            console.error("從雲端載入影片失敗 (JSONP):", error);
+            videos = [];
+            statusDisplay.innerHTML = `<i class="fas fa-exclamation-triangle text-4xl text-red-500"></i><p class="mt-2">無法連接到雲端資料庫。<br>${error.message}</p>`;
         }
+    }
+
 
         // ===== 事件監聽器 =====
-        function initEventListeners() {
-            document.getElementById('generate-btn').addEventListener('click', handleGenerateClick);
-            document.getElementById('project-input').addEventListener('keypress', e => e.key === 'Enter' && handleGenerateClick());
-            
-            document.getElementById('cancel-edit-btn').addEventListener('click', closeEditModal);
-            document.getElementById('save-edit-btn').addEventListener('click', handleSaveEdit);
-            document.getElementById('upload-thumbnail-btn').addEventListener('click', () => document.getElementById('upload-thumbnail-input').click());
-            document.getElementById('upload-thumbnail-input').addEventListener('change', handleThumbnailUpload);
-            document.getElementById('regenerate-thumbnail-btn').addEventListener('click', handleRegenerateThumbnail);
-        }
-
+        function initEventListeners(){
+            console.log("正在綁定事件監聽器...");
+        // 綁定生成按鈕的點擊事件
+        document.getElementById('generate-btn').addEventListener('click', handleGenerateClick);
+        
+        // 綁定輸入框的 Enter 鍵事件
+        document.getElementById('project-input').addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                handleGenerateClick();
+            }
+        });
+        
+        // 綁定編輯視窗相關的事件
+        document.getElementById('cancel-edit-btn').addEventListener('click', closeEditModal);
+        document.getElementById('save-edit-btn').addEventListener('click', handleSaveEdit);
+        document.getElementById('upload-thumbnail-btn').addEventListener('click', () => {
+        document.getElementById('upload-thumbnail-input').click();
+        });
+        document.getElementById('upload-thumbnail-input').addEventListener('change', handleThumbnailUpload);
+        document.getElementById('regenerate-thumbnail-btn').addEventListener('click', handleRegenerateThumbnail);
+        
+        console.log("事件監聽器綁定完成！");
+    }
         // ===== 渲染邏輯 =====
         function renderAllVideos() {
+            console.log("正在渲染影片列表，共", videos.length, "個影片");
             const grid = document.getElementById('video-grid');
-            grid.innerHTML = '';
-            videos.forEach(video => grid.appendChild(createVideoCard(video)));
-        }        
+            const statusDisplay = document.getElementById('status-display');
+        grid.innerHTML = '';
+        if (videos.length === 0) {
+            statusDisplay.innerHTML = `<i class="fas fa-clapperboard text-6xl"></i><p class="mt-2">資料庫是空的，從新增第一個企劃開始吧！</p>`;
+            statusDisplay.style.display = 'flex';
+            statusDisplay.style.flexDirection = 'column';
+            statusDisplay.style.justifyContent = 'center';
+            statusDisplay.style.alignItems = 'center';
+        } else {
+            statusDisplay.style.display = 'none';
+            const fragment = document.createDocumentFragment();
+            videos.forEach(video => {
+                const videoCard = createVideoCard(video);
+                fragment.appendChild(videoCard);
+            });
+            grid.appendChild(fragment);
+        }
+        console.log("影片列表渲染完成！");
+    }        
 
         function createVideoCard(video) {
             const card = document.createElement('div');
@@ -242,7 +327,7 @@
 
             card.innerHTML = `
                 <div class="relative thumbnail-container rounded-xl overflow-hidden aspect-video bg-gray-200 dark:bg-yt-light-black">
-                    <img src="${video.thumbnail}" class="w-full h-full object-cover" alt="${video.title}" />
+                    <img src="${video.thumbnailDataUrl}" class="w-full h-full object-cover" alt="${video.title}" />
                     <div class="absolute inset-0 voted-overlay flex items-center justify-center opacity-0 transition-opacity pointer-events-none bg-black bg-opacity-70">
                         <i class="fas fa-check text-white text-4xl"></i>
                     </div>
@@ -259,10 +344,10 @@
             `;
             
             card.addEventListener('click', handleVoteClick);
-            card.querySelector('.edit-btn').addEventListener('click', e => {
-                e.stopPropagation();
-                openEditModal(video.id);
-            });
+            card.querySelector('.edit-btn').addEventListener('click', (event) => {
+            event.stopPropagation(); // 防止觸發卡片的點擊事件
+            openEditModal(video.id);
+        });
             return card;
         }    
 
@@ -274,60 +359,116 @@
     /**
      * @description 處理「生成」按鈕的點擊事件。
      */
-    function handleGenerateClick() {
+    async function handleGenerateClick() {
+        console.log("使用者點擊了生成按鈕");
         const input = document.getElementById('project-input');
         const projectName = input.value.trim();
-        if (!projectName) return; // 如果沒輸入內容，就什麼都不做
+        if (!projectName) {
+            alert("請輸入企劃名稱！");
+            return;
+        }
 
-        const newVideos = generateVideoVariations(projectName); // 請創意引擎生成新影片
-        videos.unshift(...newVideos); // 使用 unshift 將新影片加到陣列的「最前面」
-        saveData();     // 儲存更新後的影片列表
-        renderAllVideos();            // 重新渲染整個畫面
-        input.value = '';             // 清空輸入框
+        
+            console.log("正在生成企劃:", projectName);
+            const newVideos = generateVideoVariations(projectName); // 請創意引擎生成新影片
+            videos.unshift(...newVideos); // 使用 unshift 將新影片加到陣列的「最前面」
+            renderAllVideos();            // 重新渲染整個畫面
+            input.value = '';             // 清空輸入框
+
+            // 嘗試同步到雲端
+        try {
+            await postDataToBackend('addVideos', newVideos);
+            console.log("新影片已成功同步到雲端。");
+            await loadVideosFromCloud();
+            renderAllVideos();
+        } catch (error) {
+            console.error("同步新影片到雲端失敗:", error);
+            alert("本地新增成功，但同步到雲端失敗！請檢查網路或稍後再試。");
+            // 如果同步失敗，重新從雲端載入資料以保持一致性
+            
+        }
     }
-
     /**
      * @description 處理「影片卡片」的點擊事件（投票）。
      * @param {MouseEvent} event - 點擊事件物件
      */
-    function handleVoteClick(event) {
+    async function handleVoteClick(event) {
         const card = event.currentTarget;
         const videoId = card.dataset.videoId;
         const videoIndex = videos.findIndex(v => v.id === videoId);
-        if (videoIndex === -1) return; // 如果找不到影片，就什麼都不做
+        if (videoIndex === -1) {
+            console.error("找不到影片ID:", videoId);
+            return;
+        }
 
-        // 1. 更新數據
+        console.log("使用者為影片投票:", videos[videoIndex].title);
+
+        // 1. 先更新本地數據和畫面
+        const originalViews = videos[videoIndex].views;
         videos[videoIndex].views++;
+        card.querySelector('.video-meta').textContent = `觀看次數：${videos[videoIndex].views}次`;
         
-        // 2. 更新畫面
-        card.querySelector('.video-meta').textContent = `觀看次數：${videos[videoIndex].views}次`; // 更新計數
-        saveData();
-
+        // 2. 顯示投票成功動畫
         const overlay = card.querySelector('.voted-overlay');
-        overlay.style.opacity = '1'; // 顯示投票成功動畫
-        setTimeout(() => { overlay.style.opacity = '0'; }, 1500); // 1.5秒後淡出
+        if (overlay) {
+            overlay.style.opacity = '1';
+            setTimeout(() => { overlay.style.opacity = '0'; }, 1500); // 1.5秒後淡出
+        }
 
-        if (SCRIPT_URL && SCRIPT_URL.includes('macros')) {
-                fetch(SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    body: JSON.stringify({
-                        projectName: videos[videoIndex].projectName,
-                        videoTitle: videos[videoIndex].title,
-                        thumbnailID: videos[videoIndex].thumbnailId
-                    })
-                }).catch(err => console.error("後台發送失敗:", err));
-            }
+        // 3. 嘗試更新遠端資料
+        try {
+            await postDataToBackend('updateVideo', videos[videoIndex]);
+            console.log("投票已成功同步到雲端");
+        } catch (error) {
+            console.error("投票同步失敗:", error);
+            // 如果同步失敗，回滾本地數據
+            videos[videoIndex].views = originalViews;
+            card.querySelector('.video-meta').textContent = `觀看次數：${videos[videoIndex].views}次`;
+            alert("投票失敗，無法同步到雲端。");
+        }
     }
 
     /**
      * @description 處理「編輯」按鈕的點擊事件，打開編輯視窗。
-     * @param {string} videoId - 要編輯的影片ID
+     * @param {string} action - 要執行的動作指令 ('addVideos', 'updateVideo', etc.)
+     * @param {Object|Array} data - 要發送的資料
      */
+    async function postDataToBackend(action, data) {
+        // 將完整的 payload 物件字串化
+        const payload = { action: action, data: data };
+        const bodyString = JSON.stringify(payload);
+
+        try {
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: {
+                    // 使用 text/plain 來避免 OPTIONS 預檢請求
+                    'Content-Type': 'text/plain;charset=utf-8', 
+                },
+                body: bodyString
+            });
+
+            // 我們不檢查回應，因為它會被CORS阻擋。我們假設它是成功的。
+            // 真正的成功與否，由下一次的 loadVideosFromCloud 來驗證。
+            console.log("POST 請求已發送。");
+        } catch (error) {
+            // 這個 catch 幾乎不會被觸發，除非是網路斷線
+            console.error("POST 請求發送時發生網路錯誤:", error);
+            throw error;
+        }
+    }
+
+
     function openEditModal(videoId) {
+        console.log("打開編輯視窗，影片ID:", videoId);
+        
         currentEditingVideoId = videoId;
         const video = videos.find(v => v.id === videoId);
-        if (!video) return;
+        
+        if (!video) {
+            console.error("找不到要編輯的影片:", videoId);
+            return;
+        }
 
         // 將影片的現有資料，填入編輯視窗的對應欄位
         document.getElementById('edit-title-input').value = video.title;
@@ -340,7 +481,7 @@
             canvas.height = canvas.width * (img.naturalHeight / img.naturalWidth);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         };
-        img.src = video.thumbnail;
+        img.src = video.thumbnailDataUrl;
         
         // 顯示編輯視窗
         document.getElementById('edit-modal').classList.remove('hidden');
@@ -348,25 +489,51 @@
     }
 
     function closeEditModal() {
-            document.getElementById('edit-modal').classList.add('hidden');
-            document.body.classList.remove('modal-open');
+            console.log("關閉編輯視窗");
+        document.getElementById('edit-modal').classList.add('hidden');
+        document.body.classList.remove('modal-open');
+        currentEditingVideoId = null;
         }
     
     /**
      * @description 處理編輯視窗中的「儲存」按鈕點擊事件。
      */
-    function handleSaveEdit() {
+    async function handleSaveEdit() {
+        if (!currentEditingVideoId) {
+            console.error("沒有正在編輯的影片");
+            return;
+        }
+        
         const videoIndex = videos.findIndex(v => v.id === currentEditingVideoId);
-        if (videoIndex === -1) return;
+        if (videoIndex === -1) {
+            console.error("找不到正在編輯的影片");
+            return;
+        }
+
+        console.log("正在儲存編輯結果");
+
+        // 先儲存一份舊資料，以便失敗時回滾
+        const oldVideo = JSON.parse(JSON.stringify(videos[videoIndex]));
 
         // 從編輯視窗中獲取新的資料
         videos[videoIndex].title = document.getElementById('edit-title-input').value;
-            const canvas = document.getElementById('edit-thumbnail-canvas');
-            videos[videoIndex].thumbnail = canvas.toDataURL('image/jpeg');
-        
-        saveData();
+        const canvas = document.getElementById('edit-thumbnail-canvas');
+        if (canvas.toDataURL) {
+          videos[videoIndex].thumbnailDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        }
         renderAllVideos();
         closeEditModal();
+        // 在背景更新單一影片到後台
+        try {
+            await postDataToBackend('updateVideo', videos[videoIndex]);
+            console.log("影片編輯已成功同步到雲端。");
+        } catch (error) {
+            console.error(`更新影片 ${videos[videoIndex].id} 失敗:`, error);
+            alert("儲存編輯失敗，無法同步到雲端。");
+            // 回滾到舊資料
+            videos[videoIndex] = oldVideo;
+            renderAllVideos();
+        }
     }
     
     /**
@@ -376,14 +543,19 @@
     function handleThumbnailUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
+        
+        console.log("使用者上傳了新的封面圖片");
+        
         const reader = new FileReader();
-        reader.onload = e => {
+        reader.onload = (e) => {
             const canvas = document.getElementById('edit-thumbnail-canvas');
             const ctx = canvas.getContext('2d');
             const img = new Image();
+            
             img.onload = () => {
+                // 將上傳的圖片標準化為 16:9 比例
                 canvas.width = 640; 
-                canvas.height = 360; // 將上傳的圖片標準化為16:9
+                canvas.height = 360;
                 ctx.drawImage(img, 0, 0, 640, 360);
             };
             img.src = e.target.result;
@@ -395,8 +567,13 @@
      * @description 處理編輯視窗中的「重新生成」按鈕點擊事件。
      */
     function handleRegenerateThumbnail() {
+        if (!currentEditingVideoId) return;
+        
         const video = videos.find(v => v.id === currentEditingVideoId);
         if (!video) return;
+        
+        console.log("重新生成封面");
+        
         const canvas = document.getElementById('edit-thumbnail-canvas');
         // 直接在編輯視窗的畫布上，重新畫一次封面
         generateThumbnailOnCanvas(canvas, video.projectName, video.thumbnailId);
@@ -413,56 +590,71 @@
      * @returns {Array<Object>} - 包含多個新影片物件的陣列
      */
             function generateVideoVariations(projectName) {
-            // 1. 建立一個豐富的「標題點子庫」。這是唯一新增的資料。
-            const titleIdeas = [
-                `【硬核解析】關於「${projectName}」你不知道的3個秘密`,
-                `[VLOG] 我花了7天，只為了搞懂「${projectName}」...結果竟然是這樣！`,
-                `「${projectName}」真的值得嗎？一個誠實的深度評測`,
-                `一個影片讓你完全搞懂「${projectName}」的底層邏輯`,
-                `我用「${projectName}」挑戰傳統方法，沒想到... 😱`,
-                `【終極指南】從零開始掌握「${projectName}」`,
-                `當「${projectName}」遇到AI，會擦出什麼火花？🤯`,
-                `為什麼說「${projectName}」是下一個風口？`,
-                `花了10萬元，我們買來了關於「${projectName}」的血淚教訓 🔥`,
-                `新手必看！關於「${projectName}」最常見的5個誤區`,
-                `開箱「${projectName}」：它真的像傳說中那麼神嗎？`,
-                `「${projectName}」的祕史：一段不為人知的過去`
-            ];
-            
-            // 這是您原本就有的封面風格庫，我們保留它。
-            const styles = ['mrbeast', 'laogao', 'tech'];
+            console.log("正在為企劃生成影片變化:", projectName);
+        
+        const variations = [];
+        const numToGenerate = 3; // 每次生成3個影片
+        const usedPatterns = new Set(); // 避免重複的標題模式
+        
+        /**
+         * @description 從指定的零件庫中隨機選取一個元素。
+         * @param {string} partName - 零件庫的名稱（如 'prefixes', 'time' 等）
+         * @returns {string} - 隨機選中的零件
+         */
+        const randomPart = (partName) => {
+            const parts = titleParts[partName];
+            if (!parts || !Array.isArray(parts) || parts.length === 0) {
+                console.warn(`警告：零件庫 '${partName}' 不存在或為空`);
+                return '';
+            }
+            return parts[Math.floor(Math.random() * parts.length)];
+        };
 
-            // 2. 隨機打亂我們的「標題點子庫」。
-            for (let i = titleIdeas.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [titleIdeas[i], titleIdeas[j]] = [titleIdeas[j], titleIdeas[i]];
+        for (let i = 0; i < numToGenerate; i++) {
+            // 選擇一個尚未使用過的核心標題模式
+            let corePattern;
+            do {
+                corePattern = randomPart('corePatterns');
+            } while (usedPatterns.has(corePattern) && usedPatterns.size < titleParts.corePatterns.length);
+            usedPatterns.add(corePattern);
+
+            // 組合最終標題
+            let finalTitle = `${randomPart('prefixes')} ${corePattern}`.trim()
+                .replace(/\[P\]/g, projectName)           // 替換企劃名稱
+                .replace(/\[N\]/g, randomPart('numbers')) // 替換數字
+                .replace(/\[T\]/g, randomPart('time'))    // 替換時間
+                .replace(/\[R\]/g, randomPart('results')) // 替換結果
+                .replace(/\[S\]/g, randomPart('surprises')) // 替換驚喜元素
+                .replace(/\[C\]/g, randomPart('competitors')); // 替換競爭對手
+
+            // 50% 機率加上 hook（吸引人的結尾）
+            if (Math.random() > 0.5) {
+                finalTitle += ` ${randomPart('hooks')}`;
             }
 
-            // 3. 從打亂後的點子庫中，選取前3個，並將它們打包成您原本程式碼可以識別的 `templates` 格式。
-            const selectedTemplates = titleIdeas.slice(0, 3).map((idea, index) => {
-                return {
-                    t: idea, // 標題內容
-                    style: styles[index % styles.length] // 封面風格，循環使用
-                };
-            });
+            // 選擇封面風格
+            const style = randomPart('styles');
+            
+            // 創建影片資料物件
+            const videoData = {
+                id: `vid_${Date.now()}_${i}`,
+                projectName: projectName,
+                title: finalTitle.trim(),
+                thumbnailId: style,
+                channel: channelNames[Math.floor(Math.random() * channelNames.length)],
+                views: 0,
+                avatarColor: `hsl(${Math.random() * 360}, 60%, 50%)` // 隨機頭像顏色
+            };
 
-            // 4. 【最關鍵的一步】我們使用您原本檔案中，那段被證明可以100%正常運作的 .map() 邏輯，來處理我們剛剛生成的隨機模板。
-            return selectedTemplates.map((tpl, i) => {
-                // 下面這一行，完全遵從您原始碼的呼叫方式，確保不會有任何接口不符的問題。
-                const thumbnailURL = generateThumbnailDataURL(projectName, tpl.style);
-                
-                return {
-                    id: `vid_${Date.now()}_${i}`,
-                    projectName: projectName,
-                    title: tpl.t,
-                    thumbnailId: tpl.style,
-                    thumbnail: thumbnailURL,
-                    channel: channelNames[Math.floor(Math.random() * channelNames.length)],
-                    views: 0,
-                    avatarColor: `hsl(${Math.random() * 360}, 60%, 50%)`,
-                }
-            });
+            // 生成封面圖片的 Data URL
+            videoData.thumbnailDataUrl = generateThumbnailDataURL(videoData.projectName, videoData.thumbnailId);
+            
+            variations.push(videoData);
         }
+
+        console.log("生成完成，共", variations.length, "個影片變化");
+        return variations;
+    }
 
     // ===================================================================================
     // ===                            第五部分：輔助工具函數 (雜項)                          ===
@@ -470,32 +662,62 @@
     // 說明：這裡是提供各種支援的工具人函數，例如儲存資料、繪製封面、初始化UI元件等。        
 
     function generateThumbnailDataURL(text, style) {
-            const canvas = document.createElement('canvas');
-            generateThumbnailOnCanvas(canvas, text, style);
-            return canvas.toDataURL('image/jpeg');
-        }
+        const canvas = document.createElement('canvas');
+        generateThumbnailOnCanvas(canvas, text, style);
+        return canvas.toDataURL('image/jpeg', 0.7);
+    }
         
     function generateThumbnailOnCanvas(canvas, text, style) {
             canvas.width = 640; canvas.height = 360; // 16:9
             const ctx = canvas.getContext('2d');
             const styles = {
-                mrbeast: { bg: ['#f7b733', '#fc4a1a'], emoji: '😱' },
-                laogao: { bg: ['#2c3e50', '#3498db'], emoji: '👁️' },
-                tech: { bg: ['#111', '#555'], emoji: '💻' }
-            };
-            const s = styles[style] || styles.tech;
-            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-            gradient.addColorStop(0, s.bg[0]); gradient.addColorStop(1, s.bg[1]);
-            ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.font = 'bold 48px "Microsoft JhengHei", sans-serif'; ctx.fillStyle = '#fff';
-            ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10;
-            ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-            ctx.font = '80px sans-serif'; ctx.shadowBlur = 0;
-            ctx.fillText(s.emoji, 60, 70);
-        }
+            mrbeast: { 
+                bg: ['#f7b733', '#fc4a1a'], // 橘黃漸層
+                emoji: '😱',
+                textColor: '#fff',
+                shadowColor: 'rgba(0,0,0,0.8)'
+            },
+            laogao: { 
+                bg: ['#2c3e50', '#3498db'], // 藍灰漸層
+                emoji: '👁️',
+                textColor: '#fff',
+                shadowColor: 'rgba(0,0,0,0.6)'
+            },
+            tech: { 
+                bg: ['#111', '#555'], // 黑灰漸層
+                emoji: '💻',
+                textColor: '#00ff00',
+                shadowColor: 'rgba(0,0,0,0.9)'
+            }
+        };
+            // 如果指定的風格不存在，使用 tech 風格作為預設
+        const currentStyle = styles[style] || styles.tech;
+        
+        // 繪製漸層背景
+        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        gradient.addColorStop(0, currentStyle.bg[0]);
+        gradient.addColorStop(1, currentStyle.bg[1]);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 加上半透明的暗色覆蓋層，增加文字可讀性
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 設定文字樣式並繪製主標題
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 48px "Microsoft JhengHei", sans-serif';
+        ctx.fillStyle = currentStyle.textColor;
+        ctx.shadowColor = currentStyle.shadowColor;
+        ctx.shadowBlur = 10;
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+        
+        // 繪製表情符號在左上角
+        ctx.font = '80px sans-serif';
+        ctx.shadowBlur = 0;
+        ctx.fillText(currentStyle.emoji, 60, 70);
+    }
 
         function shuffleArray(array) {
             for (let i = array.length - 1; i > 0; i--) {
@@ -504,48 +726,91 @@
             }
             return array;
         }        
+
+    function initUI() {
+        console.log("正在初始化 UI 元件...");
+        initTheme();   // 初始化主題切換功能
+        initSidebar(); // 初始化側邊欄收合功能
+        console.log("UI 元件初始化完成！");
+    }
         
     function initTheme() {
         const themeToggle = document.getElementById('theme-toggle');
         const docEl = document.documentElement;
         const applyTheme = (theme) => {
-                if (theme === 'dark') docEl.classList.add('dark');
-                else docEl.classList.remove('dark');
-            };
+            if (theme === 'dark') {
+                docEl.classList.add('dark');
+            } else {
+                docEl.classList.remove('dark');
+            }
+        };
             themeToggle.addEventListener('click', () => {
                 const currentTheme = localStorage.getItem('theme') === 'dark' ? 'light' : 'dark';
                 localStorage.setItem('theme', currentTheme);
                 applyTheme(currentTheme);
+                console.log("主題已切換為:", currentTheme);
             });
-            applyTheme(localStorage.getItem('theme') || 'light');
+            // 載入並套用儲存的主題設定，如果沒有則使用淺色主題
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        applyTheme(savedTheme);
+        console.log("已載入主題設定:", savedTheme);
         }
         
-    function initSidebar() {
-        const menuToggle = document.getElementById('menu-toggle');
-        const sidebar = document.getElementById('sidebar');
-        const mainContent = document.getElementById('main-content');
-        let isMini = window.innerWidth < 1313;
-
-        const applySidebarState = () => {
-                if(isCollapsed){
-                    sidebar.classList.add('collapsed');
-                    mainContent.style.marginLeft = '0';
+    function initSidebar(){
+        const menuToggle = document.getElementById("menu-toggle");
+        const mainContent = document.getElementById("main-content");
+        const sidebar = document.getElementById("sidebar");
+        
+        // 根據螢幕寬度決定初始狀態
+        let isCollapsed = window.innerWidth < 1313;
+        
+        /**
+         * @description 套用側邊欄的收合狀態。
+         * @param {boolean} collapsed - 是否收合
+         */
+        const applySidebarState = (collapsed) => {
+            if (collapsed) {
+                sidebar.classList.add("collapsed");
+                if (window.innerWidth >= 1313) {
+                    mainContent.style.marginLeft = "72px"; // 大螢幕時保留小側邊欄
                 } else {
-                    sidebar.classList.remove('collapsed');
-                    mainContent.style.marginLeft = '240px';
+                    mainContent.style.marginLeft = "0"; // 小螢幕時完全隱藏
                 }
-            };
+            } else {
+                sidebar.classList.remove("collapsed");
+                mainContent.style.marginLeft = "240px"; // 完整側邊欄寬度
+            }
+        };
         
-        menuToggle.addEventListener('click', () => {
-                isCollapsed = !isCollapsed;
-                applySidebarState();
-            });
-            window.addEventListener('resize', () => {
-                isCollapsed = window.innerWidth < 1313;
-                applySidebarState();
-            });
-            applySidebarState();
-        }
+        // 綁定選單切換按鈕的點擊事件
+        menuToggle.addEventListener("click", () => {
+            isCollapsed = !isCollapsed;
+            applySidebarState(isCollapsed);
+            console.log("側邊欄狀態:", isCollapsed ? "收合" : "展開");
+        });
+        
+        // 監聽視窗大小變化，自動調整側邊欄
+        window.addEventListener("resize", () => {
+            const shouldCollapse = window.innerWidth < 1313;
+            if (shouldCollapse !== isCollapsed) {
+                isCollapsed = shouldCollapse;
+                applySidebarState(isCollapsed);
+                console.log("視窗大小變化，側邊欄自動調整為:", isCollapsed ? "收合" : "展開");
+            }
+        });
+        
+        // 套用初始狀態
+        applySidebarState(isCollapsed);
+        console.log("側邊欄初始化完成，狀態:", isCollapsed ? "收合" : "展開");
+    }
+
+    // ===================================================================================
+    // ===                                程式結束                                      ===
+    // ===================================================================================
+    // 說明：所有功能都已經定義完成。當使用者載入頁面時，會自動執行 DOMContentLoaded 事件，
+    //      開始整個應用程式的初始化流程。
+
+    console.log("YouTube 企劃模擬器腳本載入完成！");
     </script>
 </body>
 </html>

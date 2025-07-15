@@ -34,10 +34,6 @@
             <span class="font-semibold text-xl ml-1 tracking-tighter">統計儀表板</span>
         </a>
         <div class="flex items-center space-x-2">
-             <!-- 按鈕：重置本地企劃數據 -->
-             <button id="reset-projects-btn" class="p-2 w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-yt-light-black" title="重置本地企劃數據">
-                <i class="fas fa-trash-alt text-xl text-orange-500"></i>
-            </button>
              <!-- 按鈕：重置雲端投票紀錄 -->
              <button id="reset-sheet-btn" class="p-2 w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-yt-light-black" title="重置雲端投票紀錄">
                 <i class="fas fa-database text-xl text-blue-500"></i>
@@ -84,13 +80,13 @@
      * @description 【可修改區】與後台溝通的專屬網址。
      * @instructions 請確保這裡的網址與 index.html 中的 SCRIPT_URL 完全相同。
      */
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyIjJK9EzOHiZVFXgRthq9bu4MSvUGBE5Mtgyzmi1-fOuKVNLPORrufFNC_-9PaS9dC/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxwEBR7kUfAfXJ9gVEDZ72zPJUhoXYspN7-Px--kiWsEXuk364VL88ZonCPamim-goy4Q/exec';
     
     /**
      * @description 【可修改區】您自己的 Google Sheet 編輯網址。
      * @instructions 用於「重置雲端投票紀錄」按鈕，點擊後會直接打開這個網址，方便您手動刪除數據。
      */
-    const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1umk_iDZRIek-97QE3xeCRlhwjQ7qbblLgwUUtWLISrQ/edit?gid=0#gid=0';
+    const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1PzXxpg4UowDTIJGcqKEDlvRXwxhXryGfyS5cz2LShFI/edit?gid=1834123586#gid=1834123586';
 
     // ===================================================================================
     // ===                           第二部分：程式進入點與初始化                           ===
@@ -113,18 +109,8 @@
             }
         });
 
-        // 3. 綁定「重置本地企劃數據」按鈕的功能
-        document.getElementById('reset-projects-btn').addEventListener('click', () => {
-            // 同樣跳出二次確認視窗
-            if(confirm('您確定要重置所有「本地企劃數據」嗎？\n\n這會將主頁面所有您生成的企劃影片全部清除，恢復到初始狀態。這個操作只影響您的瀏覽器，不影響雲端投票紀錄。')) {
-                // 從瀏覽器的 localStorage 中，移除儲存企劃影片的資料
-                localStorage.removeItem('youtubeSimulatorFinal');
-                alert('本地企劃數據已重置！\n請重新整理主頁面(index.html)以查看效果。');
-            }
-        });
-
-        // 4. 開始從雲端後台獲取統計數據
-        fetchStats();
+        // 3. 開始從雲端後台獲取統計數據
+        fetchStatsWithJsonp();
     });
     
     // ===================================================================================
@@ -134,27 +120,40 @@
     /**
      * @description 從 Google Apps Script 後台獲取統計數據的核心函數。
      */
-    function fetchStats() {
-        // 使用 fetch API 向我們的 SCRIPT_URL 發送一個 GET 請求
-        fetch(SCRIPT_URL)
-            .then(res => res.json()) // 將收到的回應解析成 JSON 格式
-            .then(result => {
-                // 如果後台回傳的狀態是 "success"
-                if (result.status === "success") {
-                    document.getElementById('loading').style.display = 'none'; // 隱藏「讀取中」提示
-                    document.getElementById('stats-content').style.display = 'block'; // 顯示統計內容區
-                    window.currentData = result.data; // 將數據存到全域變數，方便主題切換時重繪圖表
-                    renderAll(result.data); // 呼叫總渲染函數，開始繪製畫面
-                } else { 
-                    // 如果後台回傳錯誤，就拋出一個錯誤
-                    throw new Error(result.message); 
-                }
-            }).catch(e => {
-                // 如果 fetch 過程或上面任何一步出錯，就在畫面上顯示錯誤訊息
-                document.getElementById('loading').innerHTML = `<p class="text-red-500">數據加載失敗: ${e.message}</p><p>請檢查您的 Apps Script 部署與網址是否正確。</p>`;
-            });
+    function fetchWithJsonp(url) {
+        return new Promise((resolve, reject) => {
+            const callbackName = 'jsonp_callback_stats_' + Math.round(100000 * Math.random());
+            const script = document.createElement('script');
+            window[callbackName] = (data) => {
+                delete window[callbackName];
+                document.body.removeChild(script);
+                resolve(data);
+            };
+            script.src = `${url}${url.includes('?') ? '&' : '?'}callback=${callbackName}`;
+            script.onerror = reject;
+            document.body.appendChild(script);
+        });
     }
     
+    /**
+     * @description 【改造】使用 JSONP 獲取統計數據。
+     */
+    async function fetchStatsWithJsonp() {
+        try {
+            const result = await fetchWithJsonp(`${SCRIPT_URL}?from=stats`);
+            if (result.status === "success") {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('stats-content').style.display = 'block';
+                window.currentData = result.data;
+                renderAll(result.data);
+            } else { 
+                throw new Error(result.message); 
+            }
+        } catch(e) {
+            document.getElementById('loading').innerHTML = `<p class="text-red-500">數據加載失敗: ${e.message}</p><p>請檢查您的 Apps Script 部署與網址是否正確。</p>`;
+        }
+    }
+
     /**
      * @description 數據分析與渲染的總指揮官。
      * @param {Object} data - 從後台獲取到的、整理好的統計數據
