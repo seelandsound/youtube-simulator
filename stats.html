@@ -111,8 +111,29 @@
 
         // 3. 開始從雲端後台獲取統計數據
         fetchStatsWithJsonp();
+
+        // 【新增功能】監聽視窗大小變化，並使用 debounce 技巧來重繪圖表
+        window.addEventListener('resize', debounce(() => {
+            if (window.currentData) {
+                console.log("視窗大小改變，正在重繪圖表...");
+                renderCharts(window.currentData);
+            }
+        }, 250)); // 延遲 250 毫秒
     });
     
+    // 【新增功能】一個通用的 debounce 輔助函數
+    function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
     // ===================================================================================
     // ===                           第三部分：數據獲取與渲染總管                           ===
     // ===================================================================================
@@ -218,7 +239,11 @@
                 labels: projectVotes.map(p => p.name),
                 datasets: [{ data: projectVotes.map(p => p.votes), borderWidth: 1 }]
             },
-            options: { plugins: { title: { display: true, text: '各企劃票數佔比' } } }
+            options: { 
+                responsive: true,
+                maintainAspectRatio: false, // 【改造點】允許圖表自由變形
+                plugins: { legend: { display: projectVotes.length > 0 }, title: { display: true, text: '各企劃票數佔比' } }
+            }
         });
 
         // --- 繪製「TOP 5 熱門標題」長條圖 ---
@@ -232,7 +257,12 @@
                 labels: topVideos.map(v => v[0].substring(0, 15) + '...'), // 標籤只顯示前15個字
                 datasets: [{ label: '點擊數', data: topVideos.map(v => v[1]), backgroundColor: '#FF0000' }]
             },
-            options: { plugins: { title: { display: true, text: 'TOP 5 熱門標題' } } }
+            options: { 
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false, // 【改造點】允許圖表自由變形
+                plugins: { legend: { display: false }, title: { display: true, text: 'TOP 5 熱門標題' } }
+            }
         });
     }
 
